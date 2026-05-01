@@ -1,0 +1,102 @@
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: mysql
+    ports:
+      - "3306:3306"
+    volumes:
+      - ./mysql_data:/var/lib/mysql
+      - ./init_scripts:/docker-entrypoint-initdb.d
+      - ./data:/var/lib/mysql-files
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
+      MYSQL_DATABASE: foodfacts
+      MYSQL_USER: ${MYSQL_USER}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
+      MYSQL_LOCAL_INFILE: 1
+      FILE_NAME: ${FILE_NAME}
+      SELECTED_COLUMNS: ${SELECTED_COLUMNS}
+    networks:
+      - spark-network
+    healthcheck:
+      test: ["CMD-SHELL", "mysql -u root -p$${MYSQL_ROOT_PASSWORD} -D foodfacts -e \"SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = 'foodfacts' AND table_name = 'predicts'\" | grep -q 1"]
+      interval: 20s
+      timeout: 30s
+      retries: 30
+      start_period: 40s
+
+  spark-master:
+    image: bitnami/spark:3.5.1
+    container_name: spark-master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    environment:
+      - SPARK_MODE=master
+      - SPARK_DAEMON_MEMORY=${SPARK_DAEMON_MEMORY}
+    volumes:
+      - ./data:/app/data
+    networks:
+      - spark-network
+
+  spark-worker:
+    image: bitnami/spark:3.5.1
+    container_name: spark-worker
+    ports:
+      - "8081:8081"
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES}
+      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY}
+    depends_on:
+      - spark-master
+    volumes:
+      - ./data:/app/data
+    networks:
+      - spark-network
+
+  clustering-app:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: clustering-app
+    ports: 
+      - 4040:4040
+    environment:
+      - SPARK_DRIVER_MEMORY=${SPARK_DRIVER_MEMORY}
+      - SPARK_EXECUTOR_MEMORY=${SPARK_EXECUTOR_MEMORY}
+      - SPARK_EXECUTOR_CORES=${SPARK_EXECUTOR_CORES}
+      - SPARK_DEFAULT_PARALLELISM=${SPARK_DEFAULT_PARALLELISM}
+      - SPARK_SQL_SHUFFLE_PARTITIONS=${SPARK_SQL_SHUFFLE_PARTITIONS}
+      - MYSQL_URL=jdbc:mysql://mysql:3306/foodfacts
+      - MYSQL_USER=${MYSQL_USER}
+      - MYSQL_PASSWORD=${MYSQL_PASSWORD}
+    depends_on:
+      spark-master:
+        condition: service_started
+      mysql:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./scripts:/app/scripts
+    networks:
+      - spark-network
+    command: >
+      /bin/bash -c "
+      spark-submit
+      --jars /app/jars/datamart.jar,/app/jars/mysql-connector-java-8.0.33.jar \
+      --packages com.mysql:mysql-connector-j:8.0.33 \
+      --master spark://spark-master:7077
+      /app/scripts/clustering.py
+      --input_table products
+      --output_table predicts
+      -o /app/data/cluster_results
+      --max_missing 0.5
+      --min_unique 0.0001
+      -v"
+
+
+networks:
+  spark-network:
+    driver: bridge
