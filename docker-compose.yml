@@ -1,0 +1,70 @@
+services:
+  spark-master:
+    image: bitnami/spark:3.5.1
+    container_name: spark-master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    environment:
+      - SPARK_MODE=master
+      - SPARK_DAEMON_MEMORY=${SPARK_DAEMON_MEMORY}
+
+
+  spark-worker:
+    image: bitnami/spark:3.5.1
+    container_name: spark-worker
+    ports:
+      - "8081:8081"
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES}
+      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY}
+    depends_on:
+      - spark-master
+    volumes:
+      - ./word_count_data:/app/word_count_data
+      - ./custering_data:/app/custering_data
+
+
+  clustering-app:
+    image: bitnami/spark:3.5.1
+    container_name: clustering-app
+    ports:
+      - "4040:4040"
+    environment:
+      - SPARK_DRIVER_MEMORY=${SPARK_DRIVER_MEMORY}
+      - SPARK_EXECUTOR_MEMORY=${SPARK_EXECUTOR_MEMORY}
+      - SPARK_EXECUTOR_CORES=${SPARK_EXECUTOR_CORES}
+      - SPARK_DEFAULT_PARALLELISM=${SPARK_DEFAULT_PARALLELISM}
+      - SPARK_SQL_SHUFFLE_PARTITIONS=${SPARK_SQL_SHUFFLE_PARTITIONS}
+    depends_on:
+      - spark-master
+    volumes:
+      - ./custering_data:/app/custering_data
+      - ./scripts:/app/scripts
+    command: >
+      /bin/bash -c "pip install numpy && \
+      spark-submit 
+      --master spark://spark-master:7077 
+      /app/scripts/clustering.py 
+      -i /app/custering_data/en.openfoodfacts.org.products.csv 
+      -o /app/custering_data/cluster_results 
+      --max_missing 0.3 
+      --min_unique 0.001
+      -v"
+
+  word-count-runner:
+    image: bitnami/spark:3.5.1
+    container_name: word-count-runner
+    depends_on:
+      - spark-master
+    volumes:
+      - ./word_count_data:/app/word_count_data
+      - ./scripts:/app/scripts
+    command: >
+      /bin/bash -c "spark-submit 
+      --master spark://spark-master:7077 
+      /app/scripts/word_count.py 
+      -i /app/word_count_data/sample_text.txt 
+      -o /app/word_count_data/output"
