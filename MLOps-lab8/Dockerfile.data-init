@@ -1,0 +1,9 @@
+FROM busybox:latest
+
+# Copy the CSV data into the image
+COPY data/en.openfoodfacts.org.products.csv /csv-data/en.openfoodfacts.org.products.csv
+
+# Set proper permissions
+RUN chmod 644 /csv-data/en.openfoodfacts.org.products.csv
+
+CMD ["echo", "Data init image ready"]

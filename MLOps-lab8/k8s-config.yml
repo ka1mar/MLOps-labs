@@ -1,0 +1,36 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: foodfacts
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: app-config
+  namespace: foodfacts
+data:
+  MYSQL_DATABASE: foodfacts
+  FILE_NAME: en.openfoodfacts.org.products.csv
+  SELECTED_COLUMNS: "energy_100g proteins_100g carbohydrates_100g fat_100g energy-kcal_100g sugars_100g saturated-fat_100g salt_100g sodium_100g"
+  SPARK_DAEMON_MEMORY: 2g
+  SPARK_DRIVER_MEMORY: 2g
+  SPARK_EXECUTOR_MEMORY: 2g
+  SPARK_WORKER_CORES: "2"
+  SPARK_WORKER_MEMORY: 4g
+  SPARK_EXECUTOR_CORES: "2"
+  SPARK_DEFAULT_PARALLELISM: "16"
+  SPARK_SQL_SHUFFLE_PARTITIONS: "32"
+  MYSQL_URL: jdbc:mysql://mysql:3306/foodfacts
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: app-secrets
+  namespace: foodfacts
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: root
+  MYSQL_USER: user
+  MYSQL_PASSWORD: password
+
+
