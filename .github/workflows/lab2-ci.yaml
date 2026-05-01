@@ -1,0 +1,31 @@
+name: CI Lab2
+
+on:
+  push:
+    branches: ["main"]
+    paths: ["MLOps-lab2/**"]
+  pull_request:
+    branches: ["main"]
+    paths: ["MLOps-lab2/**"]
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v3
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v2
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v2
+      - name: Login to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      - name: Build and push
+        uses: docker/build-push-action@v4
+        with:
+          context: ./MLOps-lab2
+          push: true
+          tags: ka1mar/mlops-lab2:latest
