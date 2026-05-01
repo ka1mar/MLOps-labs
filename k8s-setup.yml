@@ -1,0 +1,275 @@
+# Persistent Volume Claims
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-data-pvc
+  namespace: foodfacts
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 20Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: app-data-pvc
+  namespace: foodfacts
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 15Gi
+---
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  namespace: foodfacts
+spec:
+  selector:
+    app: mysql
+  ports:
+    - port: 3306
+      targetPort: 3306
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  namespace: foodfacts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql
+    spec:
+      containers:
+      - name: mysql
+        image: mysql:8.0
+        env:
+          - name: MYSQL_ROOT_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: app-secrets
+                key: MYSQL_ROOT_PASSWORD
+          - name: MYSQL_DATABASE
+            valueFrom:
+              configMapKeyRef:
+                name: app-config
+                key: MYSQL_DATABASE
+          - name: MYSQL_USER
+            valueFrom:
+              secretKeyRef:
+                name: app-secrets
+                key: MYSQL_USER
+          - name: MYSQL_PASSWORD
+            valueFrom:
+              secretKeyRef:
+                name: app-secrets
+                key: MYSQL_PASSWORD
+          - name: FILE_NAME
+            valueFrom:
+              configMapKeyRef:
+                name: app-config
+                key: FILE_NAME
+          - name: SELECTED_COLUMNS
+            valueFrom:
+              configMapKeyRef:
+                name: app-config
+                key: SELECTED_COLUMNS
+          - name: MYSQL_LOCAL_INFILE
+            value: "1"
+        readinessProbe:
+          exec:
+            command:
+              - sh
+              - -c
+              - "mysqladmin ping -uroot -p\"$MYSQL_ROOT_PASSWORD\""
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 5
+        livenessProbe:
+          exec:
+            command:
+              - sh
+              - -c
+              - "mysqladmin ping -uroot -p\"$MYSQL_ROOT_PASSWORD\""
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+        ports:
+        - containerPort: 3306
+        volumeMounts:
+        - name: mysql-data
+          mountPath: /var/lib/mysql
+        - name: data-volume
+          mountPath: /var/lib/mysql-files
+      volumes:
+      - name: mysql-data
+        persistentVolumeClaim:
+          claimName: mysql-data-pvc
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: app-data-pvc
+---
+# Data initialization job
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: data-init
+  namespace: foodfacts
+spec:
+  template:
+    spec:
+      containers:
+      - name: data-init
+        image: data-init:latest
+        imagePullPolicy: Never
+        command: ["/bin/sh", "-c"]
+        args:
+        - |
+          echo "Copying real CSV data file..."
+          cp /csv-data/en.openfoodfacts.org.products.csv /data/en.openfoodfacts.org.products.csv
+          echo "Real CSV data copied successfully"
+          ls -la /data/
+          echo "Data initialization completed"
+        volumeMounts:
+        - name: data-volume
+          mountPath: /data
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: app-data-pvc
+      restartPolicy: OnFailure
+---
+# Spark Master Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: spark-master
+  namespace: foodfacts
+spec:
+  selector:
+    app: spark-master
+  ports:
+    - name: spark
+      port: 7077
+      targetPort: 7077
+    - name: webui
+      port: 8090
+      targetPort: 8090
+---
+# Spark Master Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-master
+  namespace: foodfacts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-master
+  template:
+    metadata:
+      labels:
+        app: spark-master
+    spec:
+      containers:
+      - name: spark-master
+        image: bitnami/spark:3.5.1
+        env:
+          - name: SPARK_MODE
+            value: master
+          - name: SPARK_DAEMON_MEMORY
+            valueFrom:
+              configMapKeyRef:
+                name: app-config
+                key: SPARK_DAEMON_MEMORY
+
+          - name: SPARK_MASTER_PORT
+            value: "7077"
+          - name: SPARK_MASTER_WEBUI_PORT
+            value: "8090"
+          - name: SPARK_MASTER_HOST
+            value: "0.0.0.0"
+          - name: SPARK_LOCAL_IP
+            value: "0.0.0.0"
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "2Gi"
+            cpu: "1"
+        ports:
+        - containerPort: 7077
+        - containerPort: 8090
+        volumeMounts:
+        - name: data-volume
+          mountPath: /app/data
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: app-data-pvc
+---
+# Spark Worker Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-worker
+  namespace: foodfacts
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: spark-worker
+  template:
+    metadata:
+      labels:
+        app: spark-worker
+    spec:
+      containers:
+      - name: spark-worker
+        image: bitnami/spark:3.5.1
+        env:
+          - name: SPARK_MODE
+            value: worker
+          - name: SPARK_MASTER_URL
+            value: spark://spark-master:7077
+          - name: SPARK_WORKER_CORES
+            valueFrom:
+              configMapKeyRef:
+                name: app-config
+                key: SPARK_WORKER_CORES
+          - name: SPARK_WORKER_MEMORY
+            valueFrom:
+              configMapKeyRef:
+                name: app-config
+                key: SPARK_WORKER_MEMORY
+
+
+        resources:
+          requests:
+            memory: "1Gi"
+            cpu: "500m"
+          limits:
+            memory: "3Gi"
+            cpu: "1"
+        volumeMounts:
+        - name: data-volume
+          mountPath: /app/data
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: app-data-pvc
+
