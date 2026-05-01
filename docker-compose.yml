@@ -1,0 +1,99 @@
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.4
+    container_name: clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - ./clickhouse_data:/var/lib/clickhouse
+      - ./init_scripts:/docker-entrypoint-initdb.d
+      - ./data:/var/lib/clickhouse/user_files
+    environment:
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - FILE_NAME=${FILE_NAME}
+      - SELECTED_COLUMNS=${SELECTED_COLUMNS}
+
+    networks:
+      - spark-network
+    healthcheck:
+      test: ["CMD", "clickhouse-client",
+             "--user", "${CLICKHOUSE_USER}",
+             "--password", "${CLICKHOUSE_PASSWORD}",
+             "-q", "SELECT count() FROM foodfacts.predicts"]
+      interval: 20s
+      timeout: 30s
+      retries: 20
+      start_period: 40s
+
+
+  spark-master:
+    image: bitnami/spark:3.5.1
+    container_name: spark-master
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+    environment:
+      - SPARK_MODE=master
+      - SPARK_DAEMON_MEMORY=${SPARK_DAEMON_MEMORY}
+    networks:
+      - spark-network
+
+  spark-worker:
+    image: bitnami/spark:3.5.1
+    container_name: spark-worker
+    ports:
+      - "8081:8081"
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_WORKER_CORES=${SPARK_WORKER_CORES}
+      - SPARK_WORKER_MEMORY=${SPARK_WORKER_MEMORY}
+    depends_on:
+      - spark-master
+    volumes:
+      - ./data:/app/data
+    networks:
+      - spark-network
+
+  clustering-app:
+    image: bitnami/spark:3.5.1
+    container_name: clustering-app
+    ports:
+      - "4040:4040"
+    environment:
+      - SPARK_DRIVER_MEMORY=${SPARK_DRIVER_MEMORY}
+      - SPARK_EXECUTOR_MEMORY=${SPARK_EXECUTOR_MEMORY}
+      - SPARK_EXECUTOR_CORES=${SPARK_EXECUTOR_CORES}
+      - SPARK_DEFAULT_PARALLELISM=${SPARK_DEFAULT_PARALLELISM}
+      - SPARK_SQL_SHUFFLE_PARTITIONS=${SPARK_SQL_SHUFFLE_PARTITIONS}
+      - CLICKHOUSE_URL=jdbc:clickhouse://clickhouse:8123/foodfacts
+      - CLICKHOUSE_USER=${CLICKHOUSE_USER}
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+    depends_on:
+      spark-master:
+        condition: service_started
+      clickhouse:
+        condition: service_healthy
+    volumes:
+      - ./data:/app/data
+      - ./scripts:/app/scripts
+    networks:
+      - spark-network
+    command: >
+      /bin/bash -c "pip install numpy clickhouse-driver && 
+      spark-submit 
+      --packages com.clickhouse:clickhouse-jdbc:0.4.6,com.clickhouse:clickhouse-http-client:0.4.6,org.apache.httpcomponents.client5:httpclient5:5.2.1 
+      --master spark://spark-master:7077 
+      /app/scripts/clustering.py 
+      --input_table products 
+      --output_table predicts 
+      -o /app/data/cluster_results
+      --max_missing 0.3
+      --min_unique 0.001
+      -v"
+
+networks:
+  spark-network:
+    driver: bridge
