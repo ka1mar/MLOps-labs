@@ -19,7 +19,7 @@ services:
         coverage run src/unit_tests/test_db.py &&
         coverage report -m
         "
-       image: ka1mar/mlops-lab1:latest
+       image: ka1mar/mlops-lab2:latest
        depends_on:
          greenplum-setup:
           condition: service_completed_successfully
@@ -29,7 +29,7 @@ services:
    web_app:
        build: .
        command: bash -c "python ./src/model_app.py && sleep 3600" 
-       image: ka1mar/mlops-lab1:latest
+       image: ka1mar/mlops-lab2:latest
        ports:
          - "5000:5000"
        restart: unless-stopped
