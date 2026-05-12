@@ -109,13 +109,12 @@ services:
       KAFKA_DEFAULT_REPLICATION_FACTOR: 1
       KAFKA_HEAP_OPTS: "-Xmx512M -Xms256M"
     depends_on:
-      zookeeper:
-        condition: service_healthy
+      - zookeeper
     healthcheck:
-      test: ["CMD", "cub", "kafka-ready", "-b", "localhost:9092", "1", "120"]
-      interval: 15s
-      timeout: 30s
-      retries: 5
+      test: ["CMD-SHELL", "bash -c '</dev/tcp/localhost/9092' 2>/dev/null && echo ok || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 10
       start_period: 30s
     networks:
       - ml-network
@@ -126,12 +125,7 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
-    healthcheck:
-      test: ["CMD", "cub", "zk-ready", "127.0.0.1:2181", "120"]
-      interval: 10s
-      timeout: 30s
-      retries: 5
-      start_period: 10s
+      SERVER_JVMFLAGS: "-Xmx256M -Xms128M"
     networks:
       - ml-network
 
