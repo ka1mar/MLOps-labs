@@ -29,7 +29,7 @@ services:
       coverage run src/unit_tests/test_db.py &&
       coverage report -m
       "
-    image: ka1mar/mlops-lab1:latest
+    image: ka1mar/mlops-lab4:latest
     depends_on:
       greenplum-setup:
         condition: service_completed_successfully
@@ -46,7 +46,7 @@ services:
       - VAULT_ADDR=http://vault:8200
       - VAULT_TOKEN=${VAULT_DEV_ROOT_TOKEN_ID}
     command: bash -c "python ./src/model_app.py && sleep 3600" 
-    image: ka1mar/mlops-lab1:latest
+    image: ka1mar/mlops-lab4:latest
     ports:
       - "5000:5000"
     restart: unless-stopped
@@ -99,6 +99,7 @@ services:
     ports:
       - "9092:9092"
     environment:
+      KAFKA_LISTENERS: PLAINTEXT://0.0.0.0:9092
       KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT
       KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
@@ -107,7 +108,8 @@ services:
       KAFKA_NUM_PARTITIONS: 1
       KAFKA_DEFAULT_REPLICATION_FACTOR: 1
     depends_on:
-      - zookeeper
+      zookeeper:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "kafka-topics --bootstrap-server kafka:9092 --list"]
       interval: 10s
@@ -123,6 +125,12 @@ services:
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep imok"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
     networks:
       - ml-network
 
