@@ -53,3 +53,8 @@ jobs:
           PASSWORD: ${{ secrets.PASSWORD }}
           VAULT_DEV_ROOT_TOKEN_ID: ${{ secrets.VAULT_DEV_ROOT_TOKEN_ID || 'myroot' }}
         run: docker compose up train_model --abort-on-container-exit --no-recreate --exit-code-from train_model
+      - name: Dump Kafka and Zookeeper logs on failure
+        if: failure()
+        run: |
+          echo "=== ZOOKEEPER LOGS ===" && docker compose logs zookeeper || true
+          echo "=== KAFKA LOGS ===" && docker compose logs kafka || true
