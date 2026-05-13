@@ -21,5 +21,4 @@ docker-compose up web_app       # Flask API on :5000
 
 ## Links
 
-- GitHub: https://github.com/ka1mar/MLOps-lab1
 - DockerHub: https://hub.docker.com/repository/docker/ka1mar/mlops-lab1

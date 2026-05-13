@@ -19,5 +19,4 @@ docker-compose up
 
 ## Links
 
-- GitHub: https://github.com/ka1mar/MLOps-lab3
 - DockerHub: https://hub.docker.com/repository/docker/ka1mar/mlops-lab3
